@@ -140,7 +140,7 @@ val copyApks = tasks.register("copyApks") {
   }
 }
 
-tasks.matching { it.name == "assembleDebug" }.configureEach {
+tasks.matching { it.name == "assembleDebug" || it.name == "packageDebug" }.configureEach {
   finalizedBy(copyApks)
 }
 
