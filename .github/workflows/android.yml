@@ -32,7 +32,7 @@ jobs:
       # âœ… Generate Gradle Wrapper automatically
       - name: Generate Gradle Wrapper
         run: |
-          gradle wrapper --gradle-version 8.9
+          gradle wrapper --gradle-version 9.3.1
 
       # âœ… Fix permission
       - name: Grant permission
