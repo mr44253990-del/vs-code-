@@ -28,28 +28,6 @@ android {
       keyAlias = "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
-    create("debugConfig") {
-      val debugKeystore = file("${rootDir}/debug.keystore")
-      if (!debugKeystore.exists()) {
-        val keytool = "${System.getenv("JAVA_HOME")}/bin/keytool"
-        val cmd = listOf(
-          keytool, "-genkeypair",
-          "-alias", "androiddebugkey",
-          "-keyalg", "RSA",
-          "-keysize", "2048",
-          "-validity", "10000",
-          "-dname", "CN=Android Debug,O=Android,C=US",
-          "-keypass", "android",
-          "-keystore", debugKeystore.absolutePath,
-          "-storepass", "android"
-        )
-        ProcessBuilder(cmd).start().waitFor()
-      }
-      storeFile = debugKeystore
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
-    }
   }
 
   buildTypes {
@@ -60,7 +38,7 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
+      // Use default debug signing config (auto-generates keystore)
     }
   }
   compileOptions {
