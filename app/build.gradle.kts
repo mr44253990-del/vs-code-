@@ -43,7 +43,7 @@ android {
           "-keystore", debugKeystore.absolutePath,
           "-storepass", "android"
         )
-        cmd.run()
+        ProcessBuilder(cmd).start().waitFor()
       }
       storeFile = debugKeystore
       storePassword = "android"
