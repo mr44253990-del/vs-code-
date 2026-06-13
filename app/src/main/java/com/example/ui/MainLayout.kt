@@ -1694,41 +1694,159 @@ fun WorkspaceEmptyState(
     colors: CustomThemeColors
 ) {
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+        Card(
+            modifier = Modifier
+                .padding(24.dp)
+                .fillMaxWidth(0.9f)
+                .wrapContentHeight(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.sidebarPaneBg.copy(alpha = 0.85f)),
+            border = BorderStroke(1.dp, Brush.linearGradient(listOf(colors.accentNeon, Color(0xFF38BDF8)))),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Computer,
-                contentDescription = null,
-                tint = colors.textMuted,
-                modifier = Modifier.size(52.dp)
-            )
-            Text(
-                text = "Welcome to Rakib Code Studio IDE",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
-            )
-            Text(
-                text = "Open files from Explorer Sidebar to start coding",
-                fontSize = 12.sp,
-                color = colors.textMuted
-            )
-            
-            // Voice coding diagnostics info
-            Spacer(modifier = Modifier.height(10.dp))
-            if (viewModel.voiceFeedback.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp, horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Glow logo wrapper mimicking the diamond template
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(colors.accentNeon.copy(alpha = 0.15f))
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.sweepGradient(
+                                listOf(colors.accentNeon, Color(0xFF38BDF8), colors.accentNeon)
+                            )
+                        )
+                        .padding(2.dp)
                 ) {
-                    Text(viewModel.voiceFeedback, fontSize = 11.sp, color = colors.accentNeon, fontWeight = FontWeight.Bold)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .background(colors.sidebarBg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "</>",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = colors.accentNeon
+                        )
+                    }
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "Rakib Code Studio",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Black,
+                        color = colors.textPrimary,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "Mobile IDE for Developers",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF38BDF8), // Cyan glow
+                        letterSpacing = 0.8.sp
+                    )
+                }
+
+                // Custom separator line
+                Box(
+                    modifier = Modifier
+                        .width(100.dp)
+                        .height(1.dp)
+                        .background(colors.borderBorder)
+                )
+
+                Text(
+                    text = "Build. Preview. Deploy.",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.textPrimary,
+                    letterSpacing = 1.sp
+                )
+
+                Text(
+                    text = "Create or open files from the Explorer sidebar list to start coding. Run live previews instantly via the Floating Run Button.",
+                    fontSize = 11.sp,
+                    color = colors.textSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = 16.sp
+                )
+
+                // Quick buttons shortcut
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.isSidebarExpanded = !viewModel.isSidebarExpanded },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.accentNeon,
+                            contentColor = colors.accentOn
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = colors.accentOn
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Toggle Sidebar",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.accentOn
+                        )
+                    }
+                }
+
+                // Interactive Voice Feedback Console indicator if active
+                if (viewModel.voiceFeedback.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(colors.accentBadge.copy(alpha = 0.15f))
+                            .border(1.dp, colors.accentBadge.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = null,
+                                tint = colors.accentBadge,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = viewModel.voiceFeedback,
+                                fontSize = 11.sp,
+                                color = colors.accentBadge,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1793,35 +1911,35 @@ data class CustomThemeColors(
 
 object AppColors {
     val DarkTheme = CustomThemeColors(
-        background = Color(0xFF090D16),
-        sidebarBg = Color(0xFF0F172A),
-        sidebarPaneBg = Color(0xFF1E293B),
-        sidebarActiveBg = Color(0xFF334155),
-        editorBg = Color(0xFF0B132B),
-        borderBorder = Color(0xFF1E293B),
-        textPrimary = Color(0xFFF8FAFC),
-        textSecondary = Color(0xFFCBD5E1),
-        textMuted = Color(0xFF64748B),
-        editorText = Color(0xFFE2E8F0),
-        accentNeon = Color(0xFFA855F7), // Neon Purple
+        background = Color(0xFF070913),          // Deep space midnight background
+        sidebarBg = Color(0xFF04060B),           // Solid midnight-dark LHS sidebar rail
+        sidebarPaneBg = Color(0xFF0A0D18),       // Sleek workspace explorer drawer blue-slate
+        sidebarActiveBg = Color(0xFF1E1F35),     // Distinct active/highlight indigo state
+        editorBg = Color(0xFF0C0F1D),            // Dark slate editor layout background
+        borderBorder = Color(0xFF161B30),        // Subtle deep accent borders
+        textPrimary = Color(0xFFF8FAFC),         // Pristine bright text
+        textSecondary = Color(0xFF94A3B8),       // Soft text descriptions
+        textMuted = Color(0xFF475569),           // Non-intrusive muted placeholders
+        editorText = Color(0xFFE2E8F0),          // Sleek code text
+        accentNeon = Color(0xFF8B5CF6),          // Vibrant theme purple (primary)
         accentOn = Color.White,
-        accentBadge = Color(0xFFEF4444) // Red alert
+        accentBadge = Color(0xFFA855F7)          // Neon violet highlight for badges and details
     )
 
     val AmoledTheme = CustomThemeColors(
-        background = Color(0xFF000000),
-        sidebarBg = Color(0xFF000000),
-        sidebarPaneBg = Color(0xFF0F0F0F),
-        sidebarActiveBg = Color(0xFF1F1F1F),
-        editorBg = Color(0xFF000000),
-        borderBorder = Color(0xFF2E2E2E),
-        textPrimary = Color(0xFFFFFFFF),
-        textSecondary = Color(0xFFE0E0E0),
-        textMuted = Color(0xFF888888),
-        editorText = Color(0xFFF0F0F0),
-        accentNeon = Color(0xFF00E5FF), // Pure neon Cyan
+        background = Color(0xFF000000),          // Absolute pure black
+        sidebarBg = Color(0xFF000000),           // Absolute pure black sidebar
+        sidebarPaneBg = Color(0xFF050508),       // Pitch black drawer
+        sidebarActiveBg = Color(0xFF121218),     // Subtle active indicator
+        editorBg = Color(0xFF000000),            // Black editor block
+        borderBorder = Color(0xFF111116),        // Faint border lines
+        textPrimary = Color(0xFFFFFFFF),         // Clean pure white text
+        textSecondary = Color(0xFFCBD5E1),       // Soft secondary text
+        textMuted = Color(0xFF5E6D82),           // Muted slate info
+        editorText = Color(0xFFF1F5F9),          // Contrast editor keys
+        accentNeon = Color(0xFF38BDF8),          // Glowing neon Sky Blue
         accentOn = Color.Black,
-        accentBadge = Color(0xFFFF1744)
+        accentBadge = Color(0xFF06B6D4)          // Glowing deep Cyan
     )
 
     val LightTheme = CustomThemeColors(
