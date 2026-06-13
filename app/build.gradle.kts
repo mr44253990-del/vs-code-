@@ -38,7 +38,9 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      // Use default debug signing config (auto-generates keystore)
+      // Use default debug signing config
+      // The default debug keystore will be generated automatically by Android
+      // at execution time, not configuration time
     }
   }
   compileOptions {
