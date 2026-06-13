@@ -1,0 +1,6 @@
+{
+  "name": "Rakib Code Studio",
+  "description": "Full-featured Android IDE designed with VS Code aesthetics, multi-file tabbed editor, live browser preview, extensions, terminal with virtual shell, and smart AI assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
