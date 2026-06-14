@@ -21,7 +21,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // UI Configuration States
     var selectedTheme by mutableStateOf("Dark") // "Dark", "Light", "AMOLED"
     var activeSidebarTab by mutableStateOf("Explorer") // Explorer, Search, Git, Extensions, AI, Settings
-    var isSidebarExpanded by mutableStateOf(true)
+    var isSidebarExpanded by mutableStateOf(false)
     var isSplitScreen by mutableStateOf(false)
     var isPreviewFullScreen by mutableStateOf(false)
     var isTerminalVisible by mutableStateOf(true)
@@ -68,9 +68,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Terminal Commands logs
     var terminalInput by mutableStateOf("")
     var terminalLogs = mutableStateOf<List<String>>(listOf(
-        "RakibCodeStudio ~ /project",
-        "Type 'help' for interactive guides or 'npm run dev' to spin server."
+        "RakibCodeStudio ~ /workspace $ ",
+        "Real terminal engine initialized."
     ))
+    
+    var problems = mutableStateOf<List<String>>(emptyList())
+
+    // Terminal real process
+    private var shellProcess: Process? = null
+    private var shellWriter: java.io.BufferedWriter? = null
 
     // Voice Interaction Support
     var isVoiceActive by mutableStateOf(false)
@@ -81,7 +87,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var isAutoSaveEnabled by mutableStateOf(true)
     var isLiveServerOn by mutableStateOf(false)
         private set
-    var editorFontSize by mutableStateOf(18)
+    var editorFontSize by mutableStateOf(12) // Default smaller for phone
+    var isLineNumbersVisible by mutableStateOf(true)
+    var autoSaveInterval by mutableStateOf(2000L) // ms
+    var editorFontFamily by mutableStateOf("Monospace")
     var isSettingsDialogVisible by mutableStateOf(false)
 
     fun toggleLiveServer() {
@@ -97,6 +106,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        startRealShell()
         viewModelScope.launch {
             repository.populateExtensionsIfEmpty()
             // Observe project files change to update Git changes automatically
@@ -389,6 +399,30 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
         // Inline CSS and script JS for safe sandboxed WebView running
         var compiled = indexHtml.content
 
+        // Inject error reporting script
+        val errorScript = """
+            <script>
+                window.onerror = function(message, source, lineno, colno, error) {
+                    window.parent.postMessage({
+                        type: 'error',
+                        message: message + ' at line ' + lineno + ':' + colno
+                    }, '*');
+                };
+                console.error = function() {
+                    window.parent.postMessage({
+                        type: 'error',
+                        message: Array.from(arguments).join(' ')
+                    }, '*');
+                };
+            </script>
+        """.trimIndent()
+        
+        if (compiled.contains("<head>")) {
+            compiled = compiled.replace("<head>", "<head>\n$errorScript")
+        } else {
+            compiled = "$errorScript\n$compiled"
+        }
+
         // Resolve css/style.css
         val cssFile = files.find { it.path == "css/style.css" || it.name == "style.css" }
         if (cssFile != null) {
@@ -420,103 +454,48 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
         }
     }
 
+    private fun startRealShell() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val pb = ProcessBuilder("/system/bin/sh")
+                pb.redirectErrorStream(true)
+                pb.directory(getApplication<Application>().filesDir)
+                shellProcess = pb.start()
+                shellWriter = shellProcess?.outputStream?.bufferedWriter()
+
+                val reader = shellProcess?.inputStream?.bufferedReader()
+                reader?.let {
+                    var line: String?
+                    while (it.readLine().also { l -> line = l } != null) {
+                        appendTerminalLog(line ?: "")
+                    }
+                }
+            } catch (e: Exception) {
+                appendTerminalLog("Terminal Error: ${e.message}")
+            }
+        }
+    }
+
     // Terminal virtual commands executor
     fun executeTerminalCommand(cmd: String) {
         val raw = cmd.trim()
         if (raw.isEmpty()) return
 
-        terminalLogs.value = terminalLogs.value + "$ RakibCodeStudio ~ /project -> $raw"
+        // Display user input with prompt
+        appendTerminalLog("$ $raw")
         
-        when (raw.lowercase()) {
-            "help" -> {
-                appendTerminalLog("Available simulated CLI tools:")
-                appendTerminalLog("  npm install        - Install simulated dependencies")
-                appendTerminalLog("  npm run dev        - Spin local build live reload server")
-                appendTerminalLog("  git status         - Print git branch configurations")
-                appendTerminalLog("  git add .          - Stage all dirty code modifications")
-                appendTerminalLog("  clear              - Wipe terminal logs")
-                appendTerminalLog("  ai \"[prompt]\"     - Query the integrated chat engine via CLI")
-            }
-            "npm install" -> {
-                viewModelScope.launch {
-                    appendTerminalLog("Installing node packages from package.json...")
-                    delay(800)
-                    appendTerminalLog("added 120 packages in 5.2s successfully.")
-                }
-            }
-            "npm run dev", "run", "run code" -> {
-                viewModelScope.launch {
-                    if (!isLiveServerOn) toggleLiveServer()
-                    appendTerminalLog("Launching local node environment...")
-                    delay(600)
-                    appendTerminalLog("Live Server successfully spun up!")
-                    appendTerminalLog("Server running at: $livePreviewUrl")
-                }
-            }
-            "git status" -> {
-                appendTerminalLog("On branch $activeBranch")
-                if (gitChanges.value.isEmpty() && stagedChanges.value.isEmpty()) {
-                    appendTerminalLog("nothing to commit, working tree clean")
-                } else {
-                    appendTerminalLog("Changes not staged for commit:")
-                    gitChanges.value.forEach { appendTerminalLog("   modified:   ${it.path}") }
-                    appendTerminalLog("Changes staged for commit:")
-                    stagedChanges.value.forEach { appendTerminalLog("   ready:      ${it.path}") }
-                }
-            }
-            "git add ." -> {
-                gitChanges.value.forEach { stageFile(it) }
-                appendTerminalLog("staged ${gitChanges.value.size} items for remote checkin.")
-            }
-            "clear" -> {
-                terminalLogs.value = listOf("RakibCodeStudio Terminal initialized.")
-            }
-            "ubuntu" -> {
-                viewModelScope.launch {
-                    appendTerminalLog("Fetching Ubuntu base image...")
-                    delay(500)
-                    appendTerminalLog("Downloading ubuntu-22.04-minimal-rootfs.tar.gz [==========] 100%")
-                    delay(400)
-                    appendTerminalLog("Extracting filesystem...")
-                    delay(700)
-                    appendTerminalLog("Setting up chroot environment...")
-                    delay(300)
-                    appendTerminalLog("Mounting /proc, /sys, /dev...")
-                    delay(300)
-                    appendTerminalLog("Ubuntu 22.04 LTS booted successfully!")
-                    appendTerminalLog("root@ubuntu:~#")
-                }
-            }
-            "python" -> {
-                viewModelScope.launch {
-                    appendTerminalLog("Python 3.10.12 (main, Nov 20 2023, 15:14:05) [GCC 11.4.0] on linux")
-                    appendTerminalLog("Type \"help\", \"copyright\", \"credits\" or \"license\" for more information.")
-                    appendTerminalLog(">>> ")
-                }
-            }
-            "node" -> {
-                viewModelScope.launch {
-                    appendTerminalLog("Welcome to Node.js v20.10.0.")
-                    appendTerminalLog("Type \".help\" for more information.")
-                    appendTerminalLog("> ")
-                }
-            }
-            else -> {
-                if (raw.startsWith("ping ")) {
-                    val host = raw.removePrefix("ping ")
-                    viewModelScope.launch {
-                        appendTerminalLog("PING $host (192.168.1.1) 56(84) bytes of data.")
-                        delay(1000)
-                        appendTerminalLog("64 bytes from $host (192.168.1.1): icmp_seq=1 ttl=116 time=12.2 ms")
-                        delay(1000)
-                        appendTerminalLog("64 bytes from $host (192.168.1.1): icmp_seq=2 ttl=116 time=11.6 ms")
-                    }
-                } else if (raw.startsWith("ai ")) {
-                    val prompt = raw.removePrefix("ai ")
-                    queryAiAssistant(prompt)
-                } else {
-                    appendTerminalLog("bash: command not found: $raw. Type 'help' for instructions.")
-                }
+        if (raw == "clear") {
+            terminalLogs.value = emptyList()
+            terminalInput = ""
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                shellWriter?.write(raw + "\n")
+                shellWriter?.flush()
+            } catch (e: Exception) {
+                appendTerminalLog("Shell write error: ${e.message}")
             }
         }
         terminalInput = ""
@@ -527,6 +506,8 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
     }
 
     // AI Assistant Code Handler using direct REST configuration
+    private val chatHistory = mutableListOf<GeminiContent>()
+
     fun queryAiAssistant(prompt: String) {
         if (prompt.trim().isEmpty()) return
         
@@ -537,24 +518,41 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
 
             // Build request with system instructions
             try {
-                // Incorporate editor active file code to support real debugging
-                val sysPrompt = "You are a senior full-stack AI coding assistant inside Rakib Code Studio IDE. Answer professional developer-focused syntax prompts precisely. Output high-fidelity code tags where applicable."
-                val reqBody = if (activeFile != null) {
-                    "User is targeting file: ${activeFile?.path}\n" +
-                    "Active Editor File content:\n```\n$editorText\n```\n\nQuery:\n$prompt"
+                val sysPrompt = """
+                    You are a senior full-stack AI coding assistant inside Rakib Code Studio IDE. 
+                    You have full access to project files.
+                    
+                    CAPABILITIES:
+                    1. Create/Update Files: Use the special tag [FILE_ACTION:path] followed by the content.
+                    Example: [FILE_ACTION:index.html]
+                    <!DOCTYPE html>...
+                    
+                    2. Fix Code: Analyze active file and provide corrected code in [FILE_ACTION:path] tags.
+                    
+                    3. Memory: You remember previous messages.
+                    
+                    Output high-fidelity code tags where applicable.
+                """.trimIndent()
+
+                // Add to history
+                val userContent = GeminiContent(parts = listOf(GeminiPart(text = prompt)))
+                if (chatHistory.size > 20) chatHistory.removeAt(0)
+                chatHistory.add(userContent)
+
+                val contextPrompt = if (activeFile != null) {
+                    "ACTIVE FILE: ${activeFile?.path}\nCONTENT:\n```\n$editorText\n```\n\nUSER PROMPT: $prompt"
                 } else {
                     prompt
                 }
 
                 val finalReq = GeminiRequest(
-                    contents = listOf(GeminiContent(parts = listOf(GeminiPart(text = reqBody)))),
+                    contents = chatHistory + listOf(GeminiContent(parts = listOf(GeminiPart(text = contextPrompt)))),
                     systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = sysPrompt)))
                 )
 
                 val apiKey = BuildConfig.GEMINI_API_KEY
                 
                 if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-                    // Pre-coded smart matching for fully functional offline backup responses!
                     delay(1200)
                     val mockResponse = getMockAiResponse(prompt)
                     repository.insertChatMessage("ai", mockResponse)
@@ -564,16 +562,57 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
                     }
                     val textRes = apiResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text 
                         ?: "Sorry, I received an empty response. Please verify code syntax or retry."
+                    
+                    // Add AI response to history
+                    chatHistory.add(GeminiContent(parts = listOf(GeminiPart(text = textRes))))
+                    
                     repository.insertChatMessage("ai", textRes)
+                    
+                    // Parse for file actions
+                    parseAiResponseForActions(textRes)
                 }
             } catch (e: Exception) {
                 Log.e("RakibCodeStudio", "Gemini API query error: ", e)
                 delay(1000)
-                // Fallback offline responses to ensure seamless UI experience
                 val mockRes = getMockAiResponse(prompt) + "\n\n*(Loaded using offline IDE assistant engine)*"
                 repository.insertChatMessage("ai", mockRes)
             } finally {
                 isAiGenerating = false
+            }
+        }
+    }
+
+    private fun parseAiResponseForActions(text: String) {
+        viewModelScope.launch {
+            val fileActionRegex = """\[FILE_ACTION:([^\]]+)\]([\s\S]*?)(?=\[FILE_ACTION:|$)""".toRegex()
+            val matches = fileActionRegex.findAll(text)
+            
+            matches.forEach { match ->
+                val path = match.groups[1]?.value?.trim() ?: ""
+                val content = match.groups[2]?.value?.trim() ?: ""
+                
+                if (path.isNotEmpty()) {
+                    val cleanedContent = content.removeSurrounding("```", "```")
+                        .removePrefix("html").removePrefix("css").removePrefix("javascript").trim()
+
+                    val existing = projectFiles.value.find { it.path == path || it.name == path }
+                    if (existing != null) {
+                        repository.saveFile(existing.copy(content = cleanedContent))
+                        appendTerminalLog("AI updated file: $path")
+                        selectTab(existing) 
+                    } else {
+                        // Create new file
+                        val proj = activeProject ?: return@launch
+                        repository.createNewFile(proj.id, path, false)
+                        loadProject(proj) // Refresh files
+                        delay(300)
+                        projectFiles.value.find { it.path == path || it.name == path }?.let {
+                            repository.saveFile(it.copy(content = cleanedContent))
+                            selectTab(it)
+                            appendTerminalLog("AI created new file: $path")
+                        }
+                    }
+                }
             }
         }
     }
