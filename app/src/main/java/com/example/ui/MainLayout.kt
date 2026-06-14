@@ -38,6 +38,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTransformGestures
 import com.example.MainViewModel
 import com.example.data.ExtensionItem
 import com.example.data.ProjectFile
@@ -85,7 +87,9 @@ fun MainLayout(
                 enter = slideInHorizontally() + fadeIn(),
                 exit = slideOutHorizontally() + fadeOut()
             ) {
-                SidebarPanePanel(viewModel, colors)
+                Box(modifier = Modifier.width(180.dp)) {
+                    SidebarPanePanel(viewModel, colors)
+                }
             }
 
             // 3. Central Working Area: Tabs Bar, Editor Area, Bottom split terminal, Live preview
@@ -120,7 +124,9 @@ fun MainLayout(
                                 if (viewModel.activeFile != null) {
                                     Row(modifier = Modifier.fillMaxSize()) {
                                         // Gutter line numbers column (scroll matches editor height)
-                                        LineNumbersGutter(viewModel, colors)
+                                        if (viewModel.isLineNumbersVisible) {
+                                            LineNumbersGutter(viewModel, colors)
+                                        }
 
                                         // Interactive typing view with custom Syntax Highlight
                                         Box(
@@ -129,7 +135,17 @@ fun MainLayout(
                                                 .fillMaxHeight()
                                                 .verticalScroll(rememberScrollState())
                                                 .horizontalScroll(rememberScrollState())
-                                                .padding(8.dp)
+                                                .pointerInput(Unit) {
+                                                    detectTransformGestures { _, _, zoom, _ ->
+                                                        if (zoom != 1f) {
+                                                            val newSize = (viewModel.editorFontSize * zoom).toInt()
+                                                            if (newSize in 8..40) {
+                                                                viewModel.editorFontSize = newSize
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                .padding(6.dp)
                                         ) {
                                             BasicTextField(
                                                 value = viewModel.editorText,
@@ -225,26 +241,26 @@ fun VSSidebarRail(
     Column(
         modifier = Modifier
             .fillMaxHeight()
-            .width(72.dp)
+            .width(52.dp)
             .background(colors.sidebarBg)
-            .padding(vertical = 8.dp),
+            .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Visual Logo at top
             IconButton(
                 onClick = { viewModel.isSidebarExpanded = !viewModel.isSidebarExpanded },
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(36.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Menu,
                     contentDescription = "Toggle Sidebar Panel spacing",
                     tint = colors.accentNeon,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -253,8 +269,8 @@ fun VSSidebarRail(
                 val isActive = viewModel.activeSidebarTab == item.name && viewModel.isSidebarExpanded
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(if (isActive) colors.sidebarActiveBg else Color.Transparent)
                         .clickable {
                             if (viewModel.activeSidebarTab == item.name && viewModel.isSidebarExpanded) {
@@ -272,7 +288,7 @@ fun VSSidebarRail(
                             contentDescription = item.desc,
                             tint = if (isActive) colors.accentNeon else colors.textMuted,
                             modifier = Modifier
-                                .run { if (isActive) size(36.dp) else size(28.dp) }
+                                .run { if (isActive) size(20.dp) else size(16.dp) }
                                 .align(Alignment.Center)
                         )
 
@@ -283,15 +299,15 @@ fun VSSidebarRail(
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
-                                        .padding(4.dp)
-                                        .size(36.dp)
+                                        .padding(2.dp)
+                                        .size(16.dp)
                                         .background(colors.accentBadge, CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = count.toString(),
                                         color = Color.White,
-                                        fontSize = 12.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -360,40 +376,40 @@ fun SidebarPanePanel(
     Column(
         modifier = Modifier
             .fillMaxHeight()
-            .width(260.dp)
+            .width(180.dp)
             .background(colors.sidebarPaneBg)
             .border(
                 width = 1.dp,
                 brush = SolidColor(colors.borderBorder),
                 shape = RoundedCornerShape(0.dp)
             )
-            .padding(vertical = 12.dp)
+            .padding(vertical = 4.dp)
     ) {
         // Header Name tag of Pane
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = viewModel.activeSidebarTab.uppercase(),
-                fontSize = 18.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
                 color = colors.textPrimary,
-                letterSpacing = 1.sp
+                letterSpacing = 0.5.sp
             )
             
             IconButton(
                 onClick = { viewModel.isSidebarExpanded = false },
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(20.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Close pane",
                     tint = colors.textMuted,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
@@ -421,7 +437,7 @@ fun SidebarPanePanel(
                         ) {
                             Text(
                                 text = "WORKSPACE",
-                                fontSize = 18.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.textMuted
                             )
@@ -432,13 +448,13 @@ fun SidebarPanePanel(
                                         isFolderInput = false
                                         showNewFilePrompt = true
                                     },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(24.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Add,
                                         contentDescription = "Add new code file",
                                         tint = colors.textMuted,
-                                        modifier = Modifier.size(36.dp)
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                                 IconButton(
@@ -447,13 +463,13 @@ fun SidebarPanePanel(
                                         isFolderInput = true
                                         showNewFilePrompt = true
                                     },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(24.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.CreateNewFolder,
                                         contentDescription = "Add new directory",
                                         tint = colors.textMuted,
-                                        modifier = Modifier.size(36.dp)
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
@@ -476,16 +492,16 @@ fun SidebarPanePanel(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Icon(
                                         imageVector = Icons.Default.Workspaces,
                                         contentDescription = "Project",
                                         tint = colors.accentNeon,
-                                        modifier = Modifier.size(36.dp)
+                                        modifier = Modifier.size(20.dp)
                                     )
                                     Text(
                                         text = viewModel.activeProject?.name ?: "No project selected",
-                                        fontSize = 16.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.textPrimary,
                                         maxLines = 1
@@ -495,7 +511,7 @@ fun SidebarPanePanel(
                                     imageVector = Icons.Default.ArrowDropDown,
                                     contentDescription = "Dropdown list indicator",
                                     tint = colors.textMuted,
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
 
@@ -552,23 +568,23 @@ fun SidebarPanePanel(
                                                 onClick = { isExpanded = !isExpanded },
                                                 onLongClick = { viewModel.deleteFileFromWorkspace(folder) }
                                             )
-                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            .padding(horizontal = 4.dp, vertical = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             Icon(
                                                 imageVector = if (isExpanded) Icons.Default.FolderOpen else Icons.Default.Folder,
                                                 contentDescription = "Folder ${folder.name}",
                                                 tint = colors.accentNeon,
-                                                modifier = Modifier.size(36.dp)
+                                                modifier = Modifier.size(20.dp)
                                             )
                                             Text(
                                                 text = folder.name,
-                                                fontSize = 16.sp,
+                                                fontSize = 13.sp,
                                                 color = colors.textPrimary
                                             )
                                         }
@@ -579,13 +595,13 @@ fun SidebarPanePanel(
                                                 isFolderInput = false
                                                 showNewFilePrompt = true
                                             },
-                                            modifier = Modifier.size(36.dp)
+                                            modifier = Modifier.size(24.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Add,
                                                 contentDescription = "Create within folder",
                                                 tint = colors.textMuted,
-                                                modifier = Modifier.size(36.dp)
+                                                modifier = Modifier.size(20.dp)
                                             )
                                         }
                                     }
@@ -597,30 +613,30 @@ fun SidebarPanePanel(
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .padding(start = 20.dp)
+                                                    .padding(start = 14.dp)
                                                     .clip(RoundedCornerShape(4.dp))
                                                     .background(if (isSelectedTab) colors.sidebarActiveBg else Color.Transparent)
                                                     .combinedClickable(
                                                         onClick = { viewModel.selectTab(child) },
                                                         onLongClick = { viewModel.deleteFileFromWorkspace(child) }
                                                     )
-                                                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                                                    .padding(horizontal = 4.dp, vertical = 3.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                 ) {
                                                     Icon(
                                                         imageVector = getIconForFilename(child.name),
                                                         contentDescription = child.name,
                                                         tint = getIconColorForFilename(child.name, colors),
-                                                        modifier = Modifier.size(36.dp)
+                                                        modifier = Modifier.size(16.dp)
                                                     )
                                                     Text(
                                                         text = child.name,
-                                                        fontSize = 16.sp,
+                                                        fontSize = 11.sp,
                                                         color = if (isSelectedTab) colors.accentNeon else colors.textSecondary
                                                     )
                                                 }
@@ -666,11 +682,11 @@ fun SidebarPanePanel(
                                             imageVector = getIconForFilename(file.name),
                                             contentDescription = file.name,
                                             tint = getIconColorForFilename(file.name, colors),
-                                            modifier = Modifier.size(36.dp)
+                                            modifier = Modifier.size(16.dp)
                                         )
                                         Text(
                                             text = file.name,
-                                            fontSize = 16.sp,
+                                            fontSize = 11.sp,
                                             color = if (isSelected) colors.accentNeon else colors.textPrimary
                                         )
                                     }
@@ -1019,7 +1035,7 @@ fun SidebarPanePanel(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Text("IDE PREFERENCES", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.textMuted)
+                        Text("IDE PREFERENCES", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.textMuted)
 
                         // Auto save
                         Row(
@@ -1028,8 +1044,8 @@ fun SidebarPanePanel(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("Auto Save", fontSize = 16.sp, color = colors.textPrimary, fontWeight = FontWeight.Bold)
-                                Text("Write files directly to workspace", fontSize = 18.sp, color = colors.textMuted)
+                                Text("Auto Save", fontSize = 12.sp, color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                                Text("Write files directly to workspace", fontSize = 10.sp, color = colors.textMuted)
                             }
                             Switch(
                                 checked = viewModel.isAutoSaveEnabled,
@@ -1041,17 +1057,17 @@ fun SidebarPanePanel(
                         HorizontalDivider(color = colors.borderBorder)
 
                         // Font size
-                        Text("FONT SIZE", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.textMuted)
+                        Text("FONT SIZE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.textMuted)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Text("Editor Font Size: ${viewModel.editorFontSize}sp", fontSize = 16.sp, color = colors.textPrimary)
+                            Text("Size: ${viewModel.editorFontSize}sp", fontSize = 11.sp, color = colors.textPrimary)
                             Slider(
                                 value = viewModel.editorFontSize.toFloat(),
                                 onValueChange = { viewModel.editorFontSize = it.toInt() },
-                                valueRange = 10f..30f,
+                                valueRange = 8f..28f,
                                 steps = 20,
                                 colors = SliderDefaults.colors(
                                     thumbColor = colors.accentNeon,
@@ -1194,7 +1210,7 @@ fun TabsHeaderRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(38.dp)
+            .height(30.dp)
             .background(colors.sidebarBg)
             .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically
@@ -1211,30 +1227,30 @@ fun TabsHeaderRow(
                         shape = RoundedCornerShape(0.dp)
                     )
                     .clickable { viewModel.selectTab(file) }
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = 4.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
                         imageVector = getIconForFilename(file.name),
                         contentDescription = file.name,
                         tint = getIconColorForFilename(file.name, colors),
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                     
                     Text(
                         text = file.name,
-                        fontSize = 16.sp,
+                        fontSize = 10.sp,
                         color = if (isActive) colors.accentNeon else colors.textSecondary,
                         fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
                     )
 
                     IconButton(
                         onClick = { viewModel.closeTab(file) },
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(16.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -1309,19 +1325,19 @@ fun LineNumbersGutter(
     Column(
         modifier = Modifier
             .fillMaxHeight()
-            .width(42.dp)
+            .width(28.dp)
             .background(colors.sidebarBg.copy(alpha = 0.5f))
             .verticalScroll(rememberScrollState())
-            .padding(vertical = 8.dp),
+            .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         for (i in 1..lineCount) {
             Text(
                 text = i.toString(),
-                fontSize = viewModel.editorFontSize.sp,
+                fontSize = (viewModel.editorFontSize * 0.8).sp,
                 fontFamily = FontFamily.Monospace,
                 color = colors.textMuted.copy(alpha = 0.6f),
-                modifier = Modifier.height((viewModel.editorFontSize + 4).dp)
+                modifier = Modifier.height((viewModel.editorFontSize * 1.4).dp)
             )
         }
     }
@@ -1364,8 +1380,8 @@ fun LiveBrowserPreviewPane(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Default.Lock, null, tint = colors.textMuted, modifier = Modifier.size(12.dp))
-                    Text(viewModel.livePreviewUrl, fontSize = 18.sp, color = colors.textPrimary)
+                    Icon(Icons.Default.Lock, null, tint = colors.textMuted, modifier = Modifier.size(10.dp))
+                    Text(viewModel.livePreviewUrl, fontSize = 12.sp, color = colors.textPrimary)
                 }
                 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -1404,6 +1420,30 @@ fun LiveBrowserPreviewPane(
                         webViewClient = WebViewClient()
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        
+                        // Bridge to catch error messages
+                        addJavascriptInterface(object {
+                            @android.webkit.JavascriptInterface
+                            fun postMessage(json: String) {
+                                // This is for older android or custom handling, 
+                                // but we injected postMessage to window.parent
+                            }
+                        }, "Android")
+
+                        // Note: To catch postMessage from iframe/webview, we might need a custom interface
+                        // or evaluate javascript regularly. 
+                        // For this IDE, let's use a standard console logger.
+                        webChromeClient = object : android.webkit.WebChromeClient() {
+                            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                                consoleMessage?.let {
+                                    if (it.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR) {
+                                        viewModel.problems.value = viewModel.problems.value + it.message()
+                                    }
+                                }
+                                return true
+                            }
+                        }
+
                         loadDataWithBaseURL("http://localhost", html, "text/html", "UTF-8", null)
                     }
                 },
@@ -1435,7 +1475,7 @@ fun VConsoleArea(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .height(140.dp)
             .background(colors.sidebarBg)
             .border(1.dp, colors.borderBorder, RoundedCornerShape(0.dp))
     ) {
@@ -1457,7 +1497,7 @@ fun VConsoleArea(
                     val isActive = viewModel.activeConsoleTab == t
                     Text(
                         text = t,
-                        fontSize = 18.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isActive) colors.accentNeon else colors.textMuted,
                         modifier = Modifier
@@ -1467,7 +1507,7 @@ fun VConsoleArea(
                                     viewModel.executeTerminalCommand("ubuntu")
                                 }
                             }
-                            .padding(vertical = 4.dp)
+                            .padding(vertical = 2.dp)
                     )
                 }
             }
@@ -1503,7 +1543,7 @@ fun VConsoleArea(
                                 text = line,
                                 style = TextStyle(
                                     fontFamily = FontFamily.Monospace,
-                                    fontSize = 16.sp,
+                                    fontSize = 10.sp,
                                     color = if (line.startsWith("$") || line.contains("npm")) colors.accentNeon else colors.editorText
                                 )
                             )
@@ -1512,13 +1552,13 @@ fun VConsoleArea(
 
                     // Input CLI basic terminal row
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 1.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "RakibCodeStudio ~ /project $ ",
+                            text = "$ ",
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 16.sp,
+                            fontSize = 10.sp,
                             color = colors.textMuted
                         )
                         BasicTextField(
@@ -1526,7 +1566,7 @@ fun VConsoleArea(
                             onValueChange = { viewModel.terminalInput = it },
                             textStyle = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 16.sp,
+                                fontSize = 10.sp,
                                 color = colors.editorText
                             ),
                             cursorBrush = SolidColor(colors.accentNeon),
@@ -1563,16 +1603,16 @@ fun BottomStatusBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(24.dp)
             .background(colors.sidebarActiveBg)
-            .padding(horizontal = 10.dp)
+            .padding(horizontal = 6.dp)
             .clickable { viewModel.isTerminalVisible = !viewModel.isTerminalVisible },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically, 
@@ -1581,28 +1621,25 @@ fun BottomStatusBar(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
+                        .size(8.dp)
                         .background(if (viewModel.isLiveServerOn) Color(0xFF22C55E) else colors.textMuted, CircleShape)
                 )
                 Text(
-                    text = if (viewModel.isLiveServerOn) "Server: 3000" else "Server: Off",
-                    fontSize = 14.sp,
+                    text = if (viewModel.isLiveServerOn) "3000" else "Off",
+                    fontSize = 10.sp,
                     color = colors.textSecondary
                 )
             }
+            
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(Icons.Default.Error, null, tint = colors.accentBadge, modifier = Modifier.size(12.dp))
+                Text(viewModel.problems.value.size.toString(), fontSize = 10.sp, color = colors.textSecondary)
+            }
         }
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Terminal,
-                contentDescription = "Toggle Terminal",
-                tint = if (viewModel.isTerminalVisible) colors.accentNeon else colors.textMuted,
-                modifier = Modifier.size(24.dp)
-            )
-            Text("Terminal", fontSize = 14.sp, color = colors.textSecondary)
+        
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("UTF-8", fontSize = 10.sp, color = colors.textMuted)
+            Text("Spaces: 4", fontSize = 10.sp, color = colors.textMuted)
         }
     }
 }
@@ -1623,10 +1660,10 @@ fun ExtensionCardRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-            Text(ext.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-            Text("By ${ext.author} • ${ext.downloads} downloads", fontSize = 18.sp, color = colors.textMuted)
+            Text(ext.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+            Text("By ${ext.author} • ${ext.downloads} downloads", fontSize = 11.sp, color = colors.textMuted)
             Spacer(modifier = Modifier.height(2.dp))
-            Text(ext.description, fontSize = 12.sp, color = colors.textSecondary, maxLines = 2)
+            Text(ext.description, fontSize = 10.sp, color = colors.textSecondary, maxLines = 2)
         }
 
         Button(
@@ -1635,13 +1672,13 @@ fun ExtensionCardRow(
                 containerColor = if (ext.isInstalled) colors.sidebarActiveBg else colors.accentNeon,
                 contentColor = if (ext.isInstalled) colors.textPrimary else colors.accentOn
             ),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
             shape = RoundedCornerShape(4.dp),
-            modifier = Modifier.height(26.dp)
+            modifier = Modifier.height(24.dp)
         ) {
             Text(
                 text = if (ext.isInstalled) "Uninstall" else "Install",
-                fontSize = 18.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
             )
         }
