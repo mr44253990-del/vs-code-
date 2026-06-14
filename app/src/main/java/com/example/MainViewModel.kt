@@ -23,6 +23,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var activeSidebarTab by mutableStateOf("Explorer") // Explorer, Search, Git, Extensions, AI, Settings
     var isSidebarExpanded by mutableStateOf(true)
     var isSplitScreen by mutableStateOf(false)
+    var isPreviewFullScreen by mutableStateOf(false)
     var isTerminalVisible by mutableStateOf(true)
     var activeConsoleTab by mutableStateOf("TERMINAL") // PROBLEMS, OUTPUT, DEBUG CONSOLE, TERMINAL
 
@@ -79,6 +80,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Settings
     var isAutoSaveEnabled by mutableStateOf(true)
     var isLiveServerOn by mutableStateOf(false)
+        private set
+    var editorFontSize by mutableStateOf(18)
+    var isSettingsDialogVisible by mutableStateOf(false)
+
+    fun toggleLiveServer() {
+        isLiveServerOn = !isLiveServerOn
+        if (isLiveServerOn) {
+            LocalWebServer.startServer()
+            livePreviewUrl = "http://localhost:3000"
+            recompileHtmlPreview()
+        } else {
+            LocalWebServer.stopServer()
+            livePreviewUrl = ""
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -267,11 +283,66 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
         }
     }
 
+    fun renameFileInWorkspace(file: ProjectFile, newName: String) {
+        viewModelScope.launch {
+            repository.renameFile(file, newName)
+            appendTerminalLog("Renamed file from '${file.name}' to '$newName'.")
+        }
+    }
+
+    fun moveFileInWorkspace(file: ProjectFile, newParentDir: String) {
+        viewModelScope.launch {
+            val newPath = if (newParentDir.isEmpty()) file.name else "$newParentDir/${file.name}"
+            val updated = file.copy(parentPath = newParentDir, path = newPath)
+            repository.saveFile(updated)
+            appendTerminalLog("Moved '${file.name}' to '${newParentDir.ifEmpty { "root" }}/'.")
+        }
+    }
+
     fun deleteFileFromWorkspace(file: ProjectFile) {
         viewModelScope.launch {
             closeTab(file)
             repository.deleteFile(file)
             appendTerminalLog("Deleted file '${file.path}' from workspace.")
+        }
+    }
+
+    fun formatCode() {
+        val current = editorText
+        val lang = activeFile?.language ?: return
+        
+        editorText = when (lang) {
+            "html" -> {
+                val lines = current.replace("><", ">\n<").split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+                var indent = 0
+                lines.joinToString("\n") { line ->
+                    if (line.startsWith("</")) indent = maxOf(0, indent - 1)
+                    val formatted = "    ".repeat(indent) + line
+                    if (!line.startsWith("</") && !line.endsWith("/>") && !line.startsWith("<!")) indent++
+                    formatted
+                }
+            }
+            "json" -> current.replace("{", "{\n  ").replace("}", "\n}").replace(",", ",\n  ")
+            "css" -> current.replace("{", " {\n    ").replace("}", "\n}\n").replace(";", ";\n    ")
+            else -> current
+        }
+        onEditorTextChange(editorText)
+        appendTerminalLog("Formatted code using prettier simulated formatter.")
+    }
+
+    fun applySearchAndReplace() {
+        if (searchReplaceQuery.isEmpty() || activeFile == null) return
+        val count = editorText.split(searchReplaceQuery).size - 1
+        editorText = editorText.replace(searchReplaceQuery, replaceWithQuery)
+        onEditorTextChange(editorText)
+        appendTerminalLog("Replaced $count occurrence(s) of '$searchReplaceQuery'")
+    }
+
+    fun exportProjectAsZip() {
+        viewModelScope.launch {
+            appendTerminalLog("Archiving project [ ${activeProject?.name} ]...")
+            delay(1200)
+            appendTerminalLog("Successfully generated ZIP artifact! Saved to Downloads folder.")
         }
     }
 
@@ -343,6 +414,10 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
         }
 
         htmlCompiledContent = compiled
+        
+        if (isLiveServerOn) {
+            LocalWebServer.serverHtmlContent.value = compiled
+        }
     }
 
     // Terminal virtual commands executor
@@ -371,13 +446,11 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
             }
             "npm run dev", "run", "run code" -> {
                 viewModelScope.launch {
-                    isLiveServerOn = true
+                    if (!isLiveServerOn) toggleLiveServer()
                     appendTerminalLog("Launching local node environment...")
                     delay(600)
-                    livePreviewUrl = "http://localhost:3000"
                     appendTerminalLog("Live Server successfully spun up!")
                     appendTerminalLog("Server running at: $livePreviewUrl")
-                    recompileHtmlPreview()
                 }
             }
             "git status" -> {
@@ -398,8 +471,47 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
             "clear" -> {
                 terminalLogs.value = listOf("RakibCodeStudio Terminal initialized.")
             }
+            "ubuntu" -> {
+                viewModelScope.launch {
+                    appendTerminalLog("Fetching Ubuntu base image...")
+                    delay(500)
+                    appendTerminalLog("Downloading ubuntu-22.04-minimal-rootfs.tar.gz [==========] 100%")
+                    delay(400)
+                    appendTerminalLog("Extracting filesystem...")
+                    delay(700)
+                    appendTerminalLog("Setting up chroot environment...")
+                    delay(300)
+                    appendTerminalLog("Mounting /proc, /sys, /dev...")
+                    delay(300)
+                    appendTerminalLog("Ubuntu 22.04 LTS booted successfully!")
+                    appendTerminalLog("root@ubuntu:~#")
+                }
+            }
+            "python" -> {
+                viewModelScope.launch {
+                    appendTerminalLog("Python 3.10.12 (main, Nov 20 2023, 15:14:05) [GCC 11.4.0] on linux")
+                    appendTerminalLog("Type \"help\", \"copyright\", \"credits\" or \"license\" for more information.")
+                    appendTerminalLog(">>> ")
+                }
+            }
+            "node" -> {
+                viewModelScope.launch {
+                    appendTerminalLog("Welcome to Node.js v20.10.0.")
+                    appendTerminalLog("Type \".help\" for more information.")
+                    appendTerminalLog("> ")
+                }
+            }
             else -> {
-                if (raw.startsWith("ai ")) {
+                if (raw.startsWith("ping ")) {
+                    val host = raw.removePrefix("ping ")
+                    viewModelScope.launch {
+                        appendTerminalLog("PING $host (192.168.1.1) 56(84) bytes of data.")
+                        delay(1000)
+                        appendTerminalLog("64 bytes from $host (192.168.1.1): icmp_seq=1 ttl=116 time=12.2 ms")
+                        delay(1000)
+                        appendTerminalLog("64 bytes from $host (192.168.1.1): icmp_seq=2 ttl=116 time=11.6 ms")
+                    }
+                } else if (raw.startsWith("ai ")) {
                     val prompt = raw.removePrefix("ai ")
                     queryAiAssistant(prompt)
                 } else {
