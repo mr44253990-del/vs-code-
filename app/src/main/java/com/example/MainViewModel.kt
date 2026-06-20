@@ -83,11 +83,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var lastVoiceCommand by mutableStateOf("")
     var voiceFeedback by mutableStateOf("")
 
+    // Settings & Splash Screen states
+    var isSplashVisible by mutableStateOf(true)
+    var isWordWrapEnabled by mutableStateOf(true)
+
     // Settings
     var isAutoSaveEnabled by mutableStateOf(true)
     var isLiveServerOn by mutableStateOf(false)
         private set
-    var editorFontSize by mutableStateOf(12) // Default smaller for phone
+    var editorFontSize by mutableStateOf(12) 
+    var editorCursorPosition by mutableStateOf("L:1, C:1")
+    var globalSearchQuery by mutableStateOf("")
+    var isCommandPaletteVisible by mutableStateOf(false)
+    var activeEditorLine by mutableStateOf(1)
+    var activeEditorColumn by mutableStateOf(1)
+
+    fun updateCursorPosition(selectionStart: Int) {
+        val textBefore = editorText.substring(0, selectionStart.coerceAtMost(editorText.length))
+        val lines = textBefore.split("\n")
+        activeEditorLine = lines.size
+        activeEditorColumn = lines.last().length + 1
+        editorCursorPosition = "L:$activeEditorLine, C:$activeEditorColumn"
+    }
+
     var isLineNumbersVisible by mutableStateOf(true)
     var autoSaveInterval by mutableStateOf(2000L) // ms
     var editorFontFamily by mutableStateOf("Monospace")
@@ -119,6 +137,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     freshList.firstOrNull { it.id == defaultId }?.let { loadProject(it) }
                 }
             }
+        }
+        viewModelScope.launch {
+            delay(1500) // Polished splash screen delay
+            isSplashVisible = false
         }
     }
 
@@ -348,11 +370,75 @@ Welcome to your visual cloud-integrated project workspace! This space functions 
         appendTerminalLog("Replaced $count occurrence(s) of '$searchReplaceQuery'")
     }
 
+    fun importExternalFile(filename: String, content: String) {
+        val proj = activeProject ?: return
+        viewModelScope.launch {
+            val parentPath = ""
+            // Deduplicate name if file with same name exists
+            var cleanName = filename
+            var count = 1
+            while (_projectFiles.value.any { it.name == cleanName && it.parentPath == parentPath }) {
+                val base = filename.substringBeforeLast(".")
+                val ext = filename.substringAfterLast(".", "")
+                cleanName = if (ext.isNotEmpty()) "$base ($count).$ext" else "$filename ($count)"
+                count++
+            }
+            
+            val lang = when (cleanName.substringAfterLast('.', "").lowercase()) {
+                "html" -> "html"
+                "css" -> "css"
+                "js" -> "javascript"
+                "json" -> "json"
+                "py" -> "python"
+                "java" -> "java"
+                "cpp" -> "cpp"
+                "md" -> "markdown"
+                else -> "text"
+            }
+            
+            val newFile = ProjectFile(
+                projectId = proj.id,
+                path = cleanName,
+                name = cleanName,
+                content = content,
+                language = lang,
+                isFolder = false,
+                parentPath = parentPath
+            )
+            repository.saveFile(newFile)
+            appendTerminalLog("Imported file '$cleanName' successfully into workspace!")
+        }
+    }
+
+    fun getProjectZipBytes(): ByteArray? {
+        val files = _projectFiles.value
+        if (files.isEmpty()) return null
+        val bos = java.io.ByteArrayOutputStream()
+        val zos = java.util.zip.ZipOutputStream(bos)
+        try {
+            files.forEach { file ->
+                if (!file.isFolder) {
+                    val entryPath = file.path.ifEmpty { file.name }
+                    val entry = java.util.zip.ZipEntry(entryPath)
+                    zos.putNextEntry(entry)
+                    zos.write(file.content.toByteArray(Charsets.UTF_8))
+                    zos.closeEntry()
+                }
+            }
+            zos.flush()
+            zos.close()
+            return bos.toByteArray()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
+
     fun exportProjectAsZip() {
         viewModelScope.launch {
             appendTerminalLog("Archiving project [ ${activeProject?.name} ]...")
-            delay(1200)
-            appendTerminalLog("Successfully generated ZIP artifact! Saved to Downloads folder.")
+            delay(1000)
+            appendTerminalLog("Generating ZIP binary stream... Ready for destination selection.")
         }
     }
 
