@@ -35,11 +35,17 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.provider.OpenableColumns
+import android.net.Uri
 import com.example.MainViewModel
 import com.example.data.ExtensionItem
 import com.example.data.ProjectFile
@@ -55,6 +61,65 @@ fun MainLayout(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // File Picker & ZIP Destination SAF launchers
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                val contentResolver = context.contentResolver
+                val filename = getFileNameFromUri(context, it) ?: "imported_file.txt"
+                val inputStream = contentResolver.openInputStream(it)
+                val fileContent = inputStream?.bufferedReader()?.use { r -> r.readText() } ?: ""
+                viewModel.importExternalFile(filename, fileContent)
+                Toast.makeText(context, "$filename imported successfully!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to import: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val zipCreatorLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                val zipBytes = viewModel.getProjectZipBytes()
+                if (zipBytes != null) {
+                    context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                        outputStream.write(zipBytes)
+                    }
+                    Toast.makeText(context, "Zip project successfully exported!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Workspace empty or could not map files.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "ZIP export failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        val writeG = perms[android.Manifest.permission.WRITE_EXTERNAL_STORAGE] ?: false
+        val readG = perms[android.Manifest.permission.READ_EXTERNAL_STORAGE] ?: false
+        if (writeG || readG) {
+            Toast.makeText(context, "File Manager access granted successfully!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+            permissionLauncher.launch(
+                arrayOf(
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                )
+            )
+        }
+    }
     
     // Theme mapping values
     val colors = when (viewModel.selectedTheme) {
@@ -63,10 +128,11 @@ fun MainLayout(
         else -> AppColors.DarkTheme
     }
 
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background),
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = modifier
+                .fillMaxSize()
+                .background(colors.background),
         bottomBar = {
             // Status bar at the very bottom
             BottomStatusBar(viewModel, colors)
@@ -88,7 +154,12 @@ fun MainLayout(
                 exit = slideOutHorizontally() + fadeOut()
             ) {
                 Box(modifier = Modifier.width(180.dp)) {
-                    SidebarPanePanel(viewModel, colors)
+                    SidebarPanePanel(
+                        viewModel = viewModel,
+                        colors = colors,
+                        onPickFile = { filePickerLauncher.launch("*/*") },
+                        onExportZip = { zipCreatorLauncher.launch("RakibCodeStudio_${viewModel.activeProject?.name ?: "project"}.zip") }
+                    )
                 }
             }
 
@@ -134,7 +205,9 @@ fun MainLayout(
                                                 .weight(1f)
                                                 .fillMaxHeight()
                                                 .verticalScroll(rememberScrollState())
-                                                .horizontalScroll(rememberScrollState())
+                                                .then(
+                                                    if (viewModel.isWordWrapEnabled) Modifier else Modifier.horizontalScroll(rememberScrollState())
+                                                )
                                                 .pointerInput(Unit) {
                                                     detectTransformGestures { _, _, zoom, _ ->
                                                         if (zoom != 1f) {
@@ -148,13 +221,19 @@ fun MainLayout(
                                                 .padding(6.dp)
                                         ) {
                                             BasicTextField(
-                                                value = viewModel.editorText,
-                                                onValueChange = { viewModel.onEditorTextChange(it) },
+                                                value = TextFieldValue(
+                                                    text = viewModel.editorText,
+                                                    selection = TextRange(viewModel.editorText.length) // Simplified tracking
+                                                ),
+                                                onValueChange = { 
+                                                    viewModel.onEditorTextChange(it.text)
+                                                    viewModel.updateCursorPosition(it.selection.start)
+                                                },
                                                 textStyle = TextStyle(
                                                     fontFamily = FontFamily.Monospace,
                                                     fontSize = viewModel.editorFontSize.sp,
                                                     color = colors.editorText,
-                                                    lineHeight = (viewModel.editorFontSize + 4).sp
+                                                    lineHeight = (viewModel.editorFontSize * 1.4).sp
                                                 ),
                                                 cursorBrush = SolidColor(colors.accentNeon),
                                                 visualTransformation = CodeSyntaxVisualTransformation(
@@ -221,6 +300,75 @@ fun MainLayout(
     if (viewModel.isVoiceActive) {
         VoiceCodingSimulationOverlay(viewModel, colors)
     }
+
+    // Elegant and premium Splash Loading Screen Overlay
+    androidx.compose.animation.AnimatedVisibility(
+        visible = viewModel.isSplashVisible,
+        enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
+        exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(800))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF04060B)), // Eye-friendly deep slate primary canvas
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(Color(0xFF38BDF8).copy(alpha = 0.15f))
+                        .border(2.dp, Color(0xFF38BDF8), androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Terminal,
+                        contentDescription = "Logo",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Rakib Code Studio",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    letterSpacing = 1.sp
+                )
+
+                Text(
+                    text = "Visual Cloud Git IDE",
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFF94A3B8)
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                CircularProgressIndicator(
+                    color = Color(0xFF38BDF8),
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(36.dp)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Mounting workspace environment...",
+                    fontSize = 11.sp,
+                    color = Color(0xFF475569)
+                )
+            }
+        }
+    }
+}
 }
 
 // 1. VS Code LHS Sidebar Rail Navigation
@@ -362,7 +510,9 @@ data class SidebarIconItem(val name: String, val icon: androidx.compose.ui.graph
 @Composable
 fun SidebarPanePanel(
     viewModel: MainViewModel,
-    colors: CustomThemeColors
+    colors: CustomThemeColors,
+    onPickFile: () -> Unit = {},
+    onExportZip: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val projectFiles by viewModel.projectFiles.collectAsState()
@@ -705,6 +855,73 @@ fun SidebarPanePanel(
                                 }
                             }
                         }
+
+                        // Custom Import & Export Vault Card
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(8.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.sidebarBg.copy(alpha = 0.3f))
+                                .border(1.dp, colors.borderBorder, RoundedCornerShape(8.dp))
+                                .padding(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudUpload,
+                                contentDescription = "Import Files",
+                                tint = colors.accentNeon,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            
+                            Text(
+                                text = "File Import Studio",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
+                            )
+                            
+                            Text(
+                                text = "Pick files from active device directories",
+                                fontSize = 9.sp,
+                                color = colors.textMuted,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                lineHeight = 12.sp
+                            )
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Button(
+                                    onClick = { onPickFile() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = colors.accentNeon),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.FileOpen, null, tint = colors.accentOn, modifier = Modifier.size(11.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Pick File", fontSize = 9.sp, color = colors.accentOn, fontWeight = FontWeight.Bold)
+                                }
+                                
+                                Button(
+                                    onClick = { 
+                                        viewModel.exportProjectAsZip()
+                                        onExportZip()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = colors.sidebarActiveBg),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.FolderZip, null, tint = colors.textPrimary, modifier = Modifier.size(11.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("ZIP All", fontSize = 9.sp, color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -712,43 +929,51 @@ fun SidebarPanePanel(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                            .padding(8.dp)
                     ) {
-                        Text("Search & Replace", fontSize = 18.sp, color = colors.textMuted)
-
-                        OutlinedTextField(
-                            value = viewModel.searchReplaceQuery,
-                            onValueChange = { viewModel.searchReplaceQuery = it },
-                            placeholder = { Text("Search text...", fontSize = 16.sp, color = colors.textMuted) },
-                            textStyle = TextStyle(fontSize = 16.sp),
-                            colors = getVSOtdColors(colors),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        OutlinedTextField(
-                            value = viewModel.replaceWithQuery,
-                            onValueChange = { viewModel.replaceWithQuery = it },
-                            placeholder = { Text("Replace with...", fontSize = 16.sp, color = colors.textMuted) },
-                            textStyle = TextStyle(fontSize = 16.sp),
-                            colors = getVSOtdColors(colors),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Button(
-                            onClick = {
-                                val text = viewModel.editorText
-                                if (viewModel.searchReplaceQuery.isNotEmpty()) {
-                                    val newText = text.replace(viewModel.searchReplaceQuery, viewModel.replaceWithQuery)
-                                    viewModel.onEditorTextChange(newText)
-                                    Toast.makeText(context, "Matched patterns replaced!", Toast.LENGTH_SHORT).show()
+                        BasicTextField(
+                            value = viewModel.globalSearchQuery,
+                            onValueChange = { viewModel.globalSearchQuery = it },
+                            textStyle = TextStyle(fontSize = 12.sp, color = colors.textPrimary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(colors.sidebarBg, RoundedCornerShape(4.dp))
+                                .border(1.dp, colors.borderBorder, RoundedCornerShape(4.dp))
+                                .padding(8.dp),
+                            cursorBrush = SolidColor(colors.accentNeon),
+                            decorationBox = { innerTextField ->
+                                if (viewModel.globalSearchQuery.isEmpty()) {
+                                    Text("Search in workspace...", fontSize = 11.sp, color = colors.textMuted)
                                 }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = colors.accentNeon, contentColor = colors.accentOn),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Replace All", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                innerTextField()
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text("RESULTS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.textMuted)
+                        
+                        val searchResults = if (viewModel.globalSearchQuery.length > 1) {
+                            viewModel.projectFiles.value.filter { 
+                                it.content.contains(viewModel.globalSearchQuery, ignoreCase = true) 
+                            }
+                        } else emptyList()
+
+                        LazyColumn(modifier = Modifier.weight(1f)) {
+                            items(searchResults) { file ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.selectTab(file) }
+                                        .padding(vertical = 6.dp)
+                                ) {
+                                    Text(file.name, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.accentNeon)
+                                    val lines = file.content.lines()
+                                    val matchLine = lines.find { it.contains(viewModel.globalSearchQuery, ignoreCase = true) }?.trim() ?: ""
+                                    Text(matchLine, fontSize = 10.sp, color = colors.textSecondary, maxLines = 1)
+                                    Text(file.path, fontSize = 9.sp, color = colors.textMuted)
+                                }
+                            }
                         }
                     }
                 }
@@ -1120,16 +1345,57 @@ fun SidebarPanePanel(
 
                         HorizontalDivider(color = colors.borderBorder)
 
+                        // Word Wrapping
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Word Wrapping", fontSize = 12.sp, color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                                Text("Wrap long lines inside editor borders", fontSize = 10.sp, color = colors.textMuted)
+                            }
+                            Switch(
+                                checked = viewModel.isWordWrapEnabled,
+                                onCheckedChange = { viewModel.isWordWrapEnabled = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = colors.accentNeon)
+                            )
+                        }
+
+                        HorizontalDivider(color = colors.borderBorder)
+
+                        // Line Numbers toggle
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Line Numbers", fontSize = 12.sp, color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                                Text("Show source line count indicator", fontSize = 10.sp, color = colors.textMuted)
+                            }
+                            Switch(
+                                checked = viewModel.isLineNumbersVisible,
+                                onCheckedChange = { viewModel.isLineNumbersVisible = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = colors.accentNeon)
+                            )
+                        }
+
+                        HorizontalDivider(color = colors.borderBorder)
+
                         // Action utilities
                         Button(
-                            onClick = { viewModel.exportProjectAsZip() },
-                            colors = ButtonDefaults.buttonColors(containerColor = colors.sidebarActiveBg),
+                            onClick = { 
+                                viewModel.exportProjectAsZip()
+                                onExportZip()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.accentNeon),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = "Export ZIP", tint = colors.textPrimary)
+                            Icon(Icons.Default.Download, contentDescription = "Export ZIP", tint = colors.accentOn)
                             Spacer(Modifier.width(8.dp))
-                            Text("Export Project as ZIP", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                            Text("Export Project as ZIP", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = colors.accentOn)
                         }
 
                         Button(
@@ -1138,7 +1404,7 @@ fun SidebarPanePanel(
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Delete current Project", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Delete current Project", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
@@ -1603,17 +1869,19 @@ fun BottomStatusBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(24.dp)
-            .background(colors.sidebarActiveBg)
-            .padding(horizontal = 6.dp)
+            .height(28.dp)
+            .background(colors.sidebarBg)
+            .padding(horizontal = 8.dp)
             .clickable { viewModel.isTerminalVisible = !viewModel.isTerminalVisible },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // LHS Statuses
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Live Server status
             Row(
                 verticalAlignment = Alignment.CenterVertically, 
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1622,24 +1890,59 @@ fun BottomStatusBar(
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .background(if (viewModel.isLiveServerOn) Color(0xFF22C55E) else colors.textMuted, CircleShape)
+                        .background(if (viewModel.isLiveServerOn) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape)
                 )
                 Text(
-                    text = if (viewModel.isLiveServerOn) "3000" else "Off",
+                    text = "Live Server: " + (if (viewModel.isLiveServerOn) "Port 3000 (On)" else "Off"),
                     fontSize = 10.sp,
-                    color = colors.textSecondary
+                    fontWeight = FontWeight.Bold,
+                    color = if (viewModel.isLiveServerOn) Color(0xFF10B981) else colors.textSecondary
                 )
             }
             
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Icon(Icons.Default.Error, null, tint = colors.accentBadge, modifier = Modifier.size(12.dp))
-                Text(viewModel.problems.value.size.toString(), fontSize = 10.sp, color = colors.textSecondary)
+            // Errors counter
+            Row(
+                verticalAlignment = Alignment.CenterVertically, 
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Error, 
+                    contentDescription = "Problems", 
+                    tint = if (viewModel.problems.value.isNotEmpty()) Color(0xFFEF4444) else colors.textMuted, 
+                    modifier = Modifier.size(11.dp)
+                )
+                Text(
+                    text = "Errors: ${viewModel.problems.value.size}", 
+                    fontSize = 10.sp, 
+                    fontWeight = FontWeight.Bold,
+                    color = if (viewModel.problems.value.isNotEmpty()) Color(0xFFEF4444) else colors.textSecondary
+                )
             }
         }
         
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("UTF-8", fontSize = 10.sp, color = colors.textMuted)
-            Text("Spaces: 4", fontSize = 10.sp, color = colors.textMuted)
+        // RHS Statuses
+        Row(
+            verticalAlignment = Alignment.CenterVertically, 
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Pos: " + viewModel.editorCursorPosition, 
+                fontSize = 10.sp, 
+                fontWeight = FontWeight.Medium,
+                color = colors.textSecondary
+            )
+            Text(
+                text = "UTF-8", 
+                fontSize = 10.sp, 
+                fontWeight = FontWeight.Medium,
+                color = colors.textSecondary
+            )
+            Text(
+                text = "Tab Spaces: 4", 
+                fontSize = 10.sp, 
+                fontWeight = FontWeight.Medium,
+                color = colors.textSecondary
+            )
         }
     }
 }
@@ -2029,35 +2332,35 @@ data class CustomThemeColors(
 
 object AppColors {
     val DarkTheme = CustomThemeColors(
-        background = Color(0xFF070913),          // Deep space midnight background
-        sidebarBg = Color(0xFF04060B),           // Solid midnight-dark LHS sidebar rail
-        sidebarPaneBg = Color(0xFF0A0D18),       // Sleek workspace explorer drawer blue-slate
-        sidebarActiveBg = Color(0xFF1E1F35),     // Distinct active/highlight indigo state
-        editorBg = Color(0xFF0C0F1D),            // Dark slate editor layout background
-        borderBorder = Color(0xFF161B30),        // Subtle deep accent borders
-        textPrimary = Color(0xFFF8FAFC),         // Pristine bright text
-        textSecondary = Color(0xFF94A3B8),       // Soft text descriptions
-        textMuted = Color(0xFF475569),           // Non-intrusive muted placeholders
-        editorText = Color(0xFFE2E8F0),          // Sleek code text
-        accentNeon = Color(0xFF8B5CF6),          // Vibrant theme purple (primary)
+        background = Color(0xFF0F111A),          // Premium deep cyber slate background
+        sidebarBg = Color(0xFF08090F),           // Low contrast LHS rail
+        sidebarPaneBg = Color(0xFF121421),       // Deep space explorer drawer
+        sidebarActiveBg = Color(0xFF1E2136),     // Highlight element states
+        editorBg = Color(0xFF131625),            // Soft coding surface to reduce optical fatigue
+        borderBorder = Color(0xFF1B1E32),        // Seamless deep spacer lines
+        textPrimary = Color(0xFFF1F5F9),         // Eye-safe soft slate white text
+        textSecondary = Color(0xFF94A3B8),       // Description gray text
+        textMuted = Color(0xFF64748B),           // Clean comment style placeholder
+        editorText = Color(0xFFE2E8F0),          // High readability text for syntax
+        accentNeon = Color(0xFFA855F7),          // Glowing neon lavender purple
         accentOn = Color.White,
-        accentBadge = Color(0xFFA855F7)          // Neon violet highlight for badges and details
+        accentBadge = Color(0xFFEC4899)          // Electric pink alert/status highlights
     )
 
     val AmoledTheme = CustomThemeColors(
-        background = Color(0xFF000000),          // Absolute pure black
-        sidebarBg = Color(0xFF000000),           // Absolute pure black sidebar
-        sidebarPaneBg = Color(0xFF050508),       // Pitch black drawer
-        sidebarActiveBg = Color(0xFF121218),     // Subtle active indicator
-        editorBg = Color(0xFF000000),            // Black editor block
-        borderBorder = Color(0xFF111116),        // Faint border lines
-        textPrimary = Color(0xFFFFFFFF),         // Clean pure white text
-        textSecondary = Color(0xFFCBD5E1),       // Soft secondary text
-        textMuted = Color(0xFF5E6D82),           // Muted slate info
-        editorText = Color(0xFFF1F5F9),          // Contrast editor keys
-        accentNeon = Color(0xFF38BDF8),          // Glowing neon Sky Blue
+        background = Color(0xFF000000),          // Absolute battery saver black
+        sidebarBg = Color(0xFF000000),           // Dark rail backdrop
+        sidebarPaneBg = Color(0xFF070709),       // Extremely subtle charcoal list background
+        sidebarActiveBg = Color(0xFF15151F),     // Selected accent indicator backdrop
+        editorBg = Color(0xFF020203),            // True ink black coding pad
+        borderBorder = Color(0xFF14141A),        // Dark border highlights
+        textPrimary = Color(0xFFFFFFFF),         // Clean pure white keys
+        textSecondary = Color(0xFF94A3B8),       // Soft description silver text
+        textMuted = Color(0xFF64748B),           // Neutral label colors
+        editorText = Color(0xFFF1F5F9),          // Contrast editor text
+        accentNeon = Color(0xFF00F0FF),          // Ultra fluorescent electric cyan highlight
         accentOn = Color.Black,
-        accentBadge = Color(0xFF06B6D4)          // Glowing deep Cyan
+        accentBadge = Color(0xFF00A2FF)          // Sky high contrast light cyan
     )
 
     val LightTheme = CustomThemeColors(
@@ -2075,4 +2378,29 @@ object AppColors {
         accentOn = Color.White,
         accentBadge = Color(0xFFDC2626)
     )
+}
+
+fun getFileNameFromUri(context: android.content.Context, uri: Uri): String? {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        try {
+            if (cursor != null && cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) {
+                    result = cursor.getString(index)
+                }
+            }
+        } finally {
+            cursor?.close()
+        }
+    }
+    if (result == null) {
+        result = uri.path
+        val cut = result?.lastIndexOf('/') ?: -1
+        if (cut != -1) {
+            result = result?.substring(cut + 1)
+        }
+    }
+    return result
 }
